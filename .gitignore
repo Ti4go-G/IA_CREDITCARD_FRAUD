@@ -1,0 +1,101 @@
+# =========================
+# Arquivos do Python
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# =========================
+# Ambiente virtual
+# =========================
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# =========================
+# Logs e temporários
+# =========================
+*.log
+*.pot
+*.pyc
+*.pyo
+*.pyd
+*.tmp
+*.bak
+*.swp
+*.swo
+
+# =========================
+# Configurações do sistema
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# Cache e build
+# =========================
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# =========================
+# Ferramentas de testes
+# =========================
+.coverage
+.tox/
+.nox/
+.pytest_cache/
+.cache/
+htmlcov/
+
+# =========================
+# Configurações de IDEs
+# =========================
+# VSCode
+.vscode/
+# PyCharm
+.idea/
+# Jupyter
+.ipynb_checkpoints
+
+# =========================
+# Outros comuns
+# =========================
+# Arquivos de ambiente
+.env.local
+.env.development.local
+.env.production.local
+.env.test.local
+*.sqlite3
+
+# =========================
+# Docker / CI
+# =========================
+*.pid
+*.seed
+*.pid.lock
+docker-compose.override.yml
+
+# =========================
+# Configurações específicas
+# =========================
+# Exemplo: Django / FastAPI / Flask
+staticfiles/
+media/
+migrations/
+instance/
