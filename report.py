@@ -305,6 +305,9 @@ def main():
     parser.add_argument('--mlp-acc', type=float, default=0.9823)
     parser.add_argument('--mlp-roc', type=float, default=0.9746)
     parser.add_argument('--mlp-pr', type=float, default=0.9289)
+    parser.add_argument('--mlp-n-oculta', type=int, default=16)
+    parser.add_argument('--mlp-taxa', type=float, default=0.2)
+    parser.add_argument('--mlp-epocas', type=int, default=20)
     parser.add_argument('--gb-acc', type=float, default=0.9816)
     parser.add_argument('--gb-roc', type=float, default=0.9810)
     parser.add_argument('--gb-pr', type=float, default=0.9361)
@@ -329,7 +332,7 @@ def main():
 
     metrics_by_model = {
         'MLP': {
-            'params': {'n_oculta': 16, 'taxa_aprendizado': 0.2, 'epocas': 20},
+            'params': {'n_oculta': args.mlp_n_oculta, 'taxa_aprendizado': args.mlp_taxa, 'epocas': args.mlp_epocas},
             'metrics': {'accuracy': args.mlp_acc, 'roc_auc': args.mlp_roc, 'pr_auc': args.mlp_pr},
         },
         'GB': {

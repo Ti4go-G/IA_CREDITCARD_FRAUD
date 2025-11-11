@@ -92,3 +92,24 @@ class RedeNeural:
             pred.append(1 if s >= 0.5 else 0)
         return pred
 
+    def prever_prob(self, X):
+        """Retorna probabilidades (valor contínuo entre 0 e 1) para cada amostra em X.
+
+        Útil para calcular ROC AUC / PR AUC ou quando o código externo espera probabilidades.
+        """
+        probs = []
+        for amostra in X:
+            s = self.feedforward(amostra)[0]
+            probs.append(s)
+        return probs
+
+    # Alias compatível com APIs que chamam 'predict_proba'
+    def predict_proba(self, X):
+        """Retorna lista de [probabilidade_da_classe_0, probabilidade_da_classe_1] por amostra.
+
+        Mantemos compatibilidade mínima com sklearn-style: retorna apenas a probabilidade da classe 1
+        embutida em cada elemento como [1-p, p] para cada amostra.
+        """
+        probs = self.prever_prob(X)
+        return [[1.0 - p, p] for p in probs]
+

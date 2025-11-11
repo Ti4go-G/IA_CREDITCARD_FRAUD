@@ -301,12 +301,190 @@ def grid_search(folds, n_features, grid, opt_metric: str = 'roc_auc', metodo: st
     return melhores, melhor_media, historico
 
 
+def _rand_in_bounds(lo, hi, kind='float'):
+    if kind == 'int':
+        return random.randint(int(lo), int(hi))
+    # float
+    return random.uniform(float(lo), float(hi))
+
+
+def _mutate_value(val, lo, hi, kind='float', strength=0.2):
+    # Gaussian-like perturbation within bounds
+    if kind == 'int':
+        span = max(1, int(round((hi - lo) * strength)))
+        new_val = int(val) + random.randint(-span, span)
+        return max(int(lo), min(int(hi), new_val))
+    else:
+        span = (hi - lo) * strength
+        new_val = float(val) + random.uniform(-span, span)
+        return max(float(lo), min(float(hi), new_val))
+
+
+def _crossover(a, b, meta):
+    # Single-point style per-parameter: for floats blend, for ints average/choose
+    child = {}
+    for k, spec in meta.items():
+        lo, hi, kind = spec[:3]
+        if kind == 'float':
+            alpha = random.random()
+            child[k] = alpha * a[k] + (1 - alpha) * b[k]
+            child[k] = max(lo, min(hi, child[k]))
+        else:
+            if random.random() < 0.5:
+                child[k] = int(round((a[k] + b[k]) / 2))
+            else:
+                child[k] = random.choice([int(a[k]), int(b[k])])
+            child[k] = max(int(lo), min(int(hi), int(child[k])))
+    return child
+
+
+def genetic_search(
+    folds,
+    n_features,
+    opt_metric: str = 'roc_auc',
+    metodo: str = 'MLP',
+    population_size: int = 18,
+    generations: int = 12,
+    crossover_rate: float = 0.9,
+    mutation_rate: float = 0.3,
+    elitism: int = 2,
+):
+    """Busca de hiperparâmetros via Algoritmo Genético.
+
+    - metodo: 'MLP' ou 'GB'
+    - opt_metric: 'roc_auc' | 'pr_auc' | 'acc'
+    Retorna (melhores_params, melhor_score, historico)
+    """
+
+    metodo_l = (metodo or 'MLP').strip().lower()
+
+    # Espaço de busca: (lo, hi, kind)
+    if metodo_l == 'mlp':
+        meta = {
+            'n_oculta': (4, 64, 'int'),
+            'taxa_aprendizado': (0.001, 0.5, 'float'),
+            'epocas': (5, 80, 'int'),
+        }
+    elif metodo_l in ('gb', 'gradient_boosting', 'gradient boosting', 'gradientboosting'):
+        meta = {
+            'n_estimators': (50, 600, 'int'),
+            'learning_rate': (0.01, 0.3, 'float'),
+            'max_depth': (1, 6, 'int'),
+        }
+    else:
+        raise ValueError(f"Método desconhecido: {metodo}")
+
+    def random_individual():
+        return {k: _rand_in_bounds(*spec) for k, spec in meta.items()}
+
+    def evaluate(params):
+        accs, media_acc, aucs, media_auc, pr_aucs, media_pr = avaliar_cv(
+            folds, n_features, metodo, params
+        )
+        # escolher escore
+        if opt_metric == 'acc':
+            score = media_acc
+        elif opt_metric == 'pr_auc':
+            score = media_pr
+        else:
+            score = media_auc
+        return score, {
+            'metodo': 'MLP' if metodo_l == 'mlp' else 'GB',
+            **params,
+            'accs': accs,
+            'media_acc': media_acc,
+            'aucs': aucs,
+            'media_auc': media_auc,
+            'pr_aucs': pr_aucs,
+            'media_pr': media_pr,
+        }
+
+    def mutate(ind):
+        child = dict(ind)
+        for k, spec in meta.items():
+            if random.random() < mutation_rate:
+                lo, hi, kind = spec[:3]
+                child[k] = _mutate_value(child[k], lo, hi, kind)
+        return child
+
+    def tournament_select(pop, fits, k=3):
+        best_idx = None
+        best_fit = -1e18
+        for _ in range(k):
+            i = random.randrange(len(pop))
+            if fits[i] > best_fit:
+                best_fit = fits[i]
+                best_idx = i
+        return pop[best_idx]
+
+    # Inicialização
+    population = [random_individual() for _ in range(population_size)]
+    historico = []
+    best_params = None
+    best_score = -1e18
+
+    for gen in range(generations):
+        scores = []
+        recs = []
+        for ind in population:
+            sc, rec = evaluate(ind)
+            scores.append(sc)
+            recs.append(rec)
+        # Log e histórico
+        gen_best_idx = max(range(len(scores)), key=lambda i: scores[i])
+        gen_best = population[gen_best_idx]
+        gen_best_score = scores[gen_best_idx]
+        # registro do melhor da geração
+        historico.append({**recs[gen_best_idx], 'geracao': gen})
+        print(
+            f"GA gen={gen} best={gen_best} -> {opt_metric}={gen_best_score:.4f}"
+        )
+        if gen_best_score > best_score:
+            best_score = gen_best_score
+            best_params = gen_best.copy()
+
+        # Seleção + reprodução
+        # Elitismo
+        elite_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:elitism]
+        new_population = [population[i] for i in elite_indices]
+
+        # Gerar filhos até completar população
+        while len(new_population) < population_size:
+            p1 = tournament_select(population, scores, k=3)
+            p2 = tournament_select(population, scores, k=3)
+            if random.random() < crossover_rate:
+                child = _crossover(p1, p2, meta)
+            else:
+                child = dict(random.choice([p1, p2]))
+            child = mutate(child)
+            new_population.append(child)
+
+        population = new_population
+
+    # Avalia melhor final para registrar métricas completas
+    final_score, final_rec = evaluate(best_params)
+    historico.append({**final_rec, 'geracao': generations})
+
+    melhores = {
+        'metodo': 'MLP' if metodo_l == 'mlp' else 'GB',
+        **best_params,
+        'opt_metric': opt_metric,
+    }
+    return melhores, final_score, historico
+
+
 if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='Treino e grid search para MLP e Gradient Boosting')
     parser.add_argument('--metodo', type=str, default='MLP', choices=['MLP', 'GB'], help='Algoritmo de modelagem')
     parser.add_argument('--opt-metric', type=str, default='roc_auc', choices=['roc_auc', 'pr_auc', 'acc'], help='Métrica de seleção do grid search')
+    parser.add_argument('--search', type=str, default='grid', choices=['grid', 'ga'], help='Tipo de busca de hiperparâmetros')
+    parser.add_argument('--ga-pop', type=int, default=18, help='Tamanho da população do GA')
+    parser.add_argument('--ga-gens', type=int, default=12, help='Número de gerações do GA')
+    parser.add_argument('--ga-cr', type=float, default=0.9, help='Taxa de crossover do GA')
+    parser.add_argument('--ga-mr', type=float, default=0.3, help='Taxa de mutação do GA')
+    parser.add_argument('--ga-elit', type=int, default=2, help='Quantidade de elites preservados por geração')
     args = parser.parse_args()
 
     random.seed(42)
@@ -333,9 +511,22 @@ if __name__ == '__main__':
             'max_depth': [2, 3, 4],
         }
 
-    melhores, melhor_media, historico = grid_search(
-        folds, n_features, grid, opt_metric=args.opt_metric, metodo=metodo
-    )
+    if args.search == 'grid':
+        melhores, melhor_media, historico = grid_search(
+            folds, n_features, grid, opt_metric=args.opt_metric, metodo=metodo
+        )
+    else:
+        melhores, melhor_media, historico = genetic_search(
+            folds,
+            n_features,
+            opt_metric=args.opt_metric,
+            metodo=metodo,
+            population_size=args.ga_pop,
+            generations=args.ga_gens,
+            crossover_rate=args.ga_cr,
+            mutation_rate=args.ga_mr,
+            elitism=args.ga_elit,
+        )
 
     print("Melhor combinacao:", melhores)
 
